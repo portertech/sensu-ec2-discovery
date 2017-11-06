@@ -3,6 +3,7 @@
 *.dll
 *.so
 *.dylib
+sensu-ec2-discovery
 
 # Test binary, build with `go test -c`
 *.test
