@@ -34,12 +34,12 @@ func main() {
 	apis, states, regions, tags := parseArguments()
 
 	if len(apis) == 0 {
-		apis = []string{"http://127.0.0.1:4567"}
+		fmt.Fprintf(os.Stderr, "Error: %v\n", usage())
+		os.Exit(1)
 	}
 
 	if len(states) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", usage())
-		os.Exit(1)
+		states = []string{"running"}
 	}
 
 	if len(regions) == 0 {
@@ -226,15 +226,18 @@ func parseArguments() (apis []string, states []string, regions []string, tags []
 func usage() string {
 	return `
 
-Missing mandatory flag 'state'.
+Missing mandatory flag 'api'.
 
 To discover running instances in every region:
-	./sensu-ec2-discover -state running
+	./sensu-ec2-discover -api http://user:password@127.0.0.1:4567
 
 To discover running and pending instances in specific regions:
-	./sensu-ec2-discover -state running -state pending -region us-west-1 -region us-west-2
+	./sensu-ec2-discover -api http://user:password@127.0.0.1:4567 -state running -state pending -region us-west-1 -region us-west-2
 
 To discover running instances with a specific tag key/value:
-	./sensu-ec2-discover -state running -tag environment=production
+	./sensu-ec2-discover -api http://user:password@127.0.0.1:4567 -tag environment=production
+
+To balance the Sensu API request load accross several Sensu APIs:
+	./sensu-ec2-discover -api http://user:password@host1:4567 -api http://user:password@host2:4567
 `
 }
