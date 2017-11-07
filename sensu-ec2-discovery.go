@@ -32,31 +32,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	filters := []*ec2.Filter{
-		&ec2.Filter{
-			Name:   aws.String("instance-state-name"),
-			Values: aws.StringSlice(states),
-		},
-	}
-
 	if len(regions) == 0 {
 		var err error
-		regions, err = fetchRegion()
+		regions, err = fetchRegions()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	if len(tags) != 0 {
-		for _, tag := range tags {
-			tagPair := strings.Split(tag, "=")
-			filter := &ec2.Filter{
-				Name:   aws.String(strings.Join([]string{"tag", tagPair[0]}, ":")),
-				Values: []*string{aws.String(tagPair[1])},
-			}
-			filters = append(filters, filter)
-		}
+	filters, err := createFilters(states, tags)
+	if err != nil {
+		fmt.Println("Error", err)
 	}
 
 	for _, region := range regions {
@@ -107,7 +94,27 @@ func discoverInstance(instance *ec2.Instance) error {
 	return err
 }
 
-func fetchRegion() ([]string, error) {
+func createFilters(states []string, tags []string) ([]*ec2.Filter, error) {
+	filters := []*ec2.Filter{
+		&ec2.Filter{
+			Name:   aws.String("instance-state-name"),
+			Values: aws.StringSlice(states),
+		},
+	}
+
+	for _, tag := range tags {
+		tagPair := strings.Split(tag, "=")
+		filter := &ec2.Filter{
+			Name:   aws.String(strings.Join([]string{"tag", tagPair[0]}, ":")),
+			Values: []*string{aws.String(tagPair[1])},
+		}
+		filters = append(filters, filter)
+	}
+
+	return filters, nil
+}
+
+func fetchRegions() ([]string, error) {
 	awsSession := session.Must(session.NewSession(&aws.Config{}))
 
 	svc := ec2.New(awsSession)
