@@ -11,6 +11,17 @@ Download the latest version of the `sensu-ec2-discovery` binary from
 
 ### Configuration
 
+AWS credentials:
+
+The `sensu-ec2-discovery` plugin expect two environment variables for
+AWS API authentication. Set them in `/etc/default/sensu-client` for
+the Sensu client executing it.
+
+```
+export AWS_ACCESS_KEY_ID=""
+export AWS_SECRET_ACCESS_KEY=""
+```
+
 Example Sensu 1.x check definition:
 
 ```
