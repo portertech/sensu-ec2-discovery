@@ -65,32 +65,46 @@ func main() {
 		}))
 
 		ec2Svc := ec2.New(sess)
-		params := &ec2.DescribeInstancesInput{Filters: filters}
 
+		params := &ec2.DescribeInstancesInput{Filters: filters}
 		result, err := ec2Svc.DescribeInstances(params)
+
 		if err != nil {
 			fmt.Println("Error", err)
 		} else {
 			for _, reservation := range result.Reservations {
 				for _, instance := range reservation.Instances {
-					fmt.Printf("%v\n", instance)
-					sensuClient := SensuClient{
-						Name:          *instance.InstanceId,
-						Address:       *instance.PublicDnsName,
-						Subscriptions: []string{},
-						Ec2: SensuClientEc2{
-							Tags: make(map[string]string),
-						},
+					err := discoverInstance(instance)
+					if err != nil {
+						fmt.Println("Error", err)
 					}
-					for _, tag := range instance.Tags {
-						sensuClient.Ec2.Tags[*tag.Key] = *tag.Value
-					}
-					output, _ := json.Marshal(sensuClient)
-					fmt.Printf("%s\n", output)
 				}
 			}
 		}
 	}
+}
+
+func manageSensuProxyClient(client SensuClient) error {
+	output, _ := json.Marshal(client)
+	fmt.Printf("%s\n", output)
+	return nil
+}
+
+func discoverInstance(instance *ec2.Instance) error {
+	client := SensuClient{
+		Name:          *instance.InstanceId,
+		Address:       *instance.PublicDnsName,
+		Subscriptions: []string{},
+		Ec2: SensuClientEc2{
+			Tags: make(map[string]string),
+		},
+	}
+	for _, tag := range instance.Tags {
+		client.Ec2.Tags[*tag.Key] = *tag.Value
+	}
+
+	err := manageSensuProxyClient(client)
+	return err
 }
 
 func fetchRegion() ([]string, error) {
