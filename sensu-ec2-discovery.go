@@ -12,14 +12,18 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
-type SensuClient struct {
-	Name          string            `json:"name"`
-	Address       string            `json:"address"`
-	Subscriptions []string          `json:"subscriptions"`
-	Tags          map[string]string `json:"tags"`
+type SensuClientEc2 struct {
+	Tags map[string]string `json:"tags"`
 }
 
-// Usage: instancesByRegion -state <value> [-state val...] [-region region...] [-tag tag...]
+type SensuClient struct {
+	Name          string         `json:"name"`
+	Address       string         `json:"address"`
+	Subscriptions []string       `json:"subscriptions"`
+	Ec2           SensuClientEc2 `json:"ec2,omitempty"`
+}
+
+// Usage: instancesByRegion -state <value> [-state value...] [-region region...] [-tag key=value...]
 func main() {
 	states, regions, tags := parseArguments()
 
@@ -74,10 +78,12 @@ func main() {
 						Name:          *instance.InstanceId,
 						Address:       *instance.PublicDnsName,
 						Subscriptions: []string{},
-						Tags:          make(map[string]string),
+						Ec2: SensuClientEc2{
+							Tags: make(map[string]string),
+						},
 					}
 					for _, tag := range instance.Tags {
-						sensuClient.Tags[*tag.Key] = *tag.Value
+						sensuClient.Ec2.Tags[*tag.Key] = *tag.Value
 					}
 					output, _ := json.Marshal(sensuClient)
 					fmt.Printf("%s\n", output)
