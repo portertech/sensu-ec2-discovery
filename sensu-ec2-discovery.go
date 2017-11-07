@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -43,7 +45,8 @@ func main() {
 
 	filters, err := createFilters(states, tags)
 	if err != nil {
-		fmt.Println("Error", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	for _, region := range regions {
@@ -72,8 +75,35 @@ func main() {
 }
 
 func manageSensuProxyClient(client SensuClient) error {
-	output, _ := json.Marshal(client)
-	fmt.Printf("%s\n", output)
+	baseUrl := "http://127.0.0.1:4567/clients"
+
+	httpClient := &http.Client{}
+
+	req, err := http.NewRequest("GET", baseUrl+"/"+client.Name, nil)
+	req.SetBasicAuth("foo", "bar")
+
+	getResp, err := httpClient.Do(req)
+
+	if err != nil {
+		return err
+	}
+	defer getResp.Body.Close()
+
+	if getResp.StatusCode == 404 {
+		data, _ := json.Marshal(client)
+
+		req, err := http.NewRequest("POST", baseUrl, bytes.NewBuffer(data))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetBasicAuth("foo", "bar")
+
+		postResp, err := httpClient.Do(req)
+
+		if err != nil {
+			return err
+		}
+		defer postResp.Body.Close()
+	}
+
 	return nil
 }
 
