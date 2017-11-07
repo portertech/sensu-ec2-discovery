@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -25,9 +29,13 @@ type SensuClient struct {
 	Ec2           SensuClientEc2 `json:"ec2,omitempty"`
 }
 
-// Usage: instancesByRegion -state <value> [-state value...] [-region region...] [-tag key=value...]
+// Usage: instancesByRegion -api <url> -state <value> [-state value...] [-region region...] [-tag key=value...]
 func main() {
-	states, regions, tags := parseArguments()
+	apis, states, regions, tags := parseArguments()
+
+	if len(apis) == 0 {
+		apis = []string{"http://127.0.0.1:4567"}
+	}
 
 	if len(states) == 0 {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", usage())
@@ -60,13 +68,13 @@ func main() {
 		result, err := ec2Svc.DescribeInstances(params)
 
 		if err != nil {
-			fmt.Println("Error", err)
+			fmt.Println("Error:", err)
 		} else {
 			for _, reservation := range result.Reservations {
 				for _, instance := range reservation.Instances {
-					err := discoverInstance(instance)
+					err := discoverInstance(apis, instance)
 					if err != nil {
-						fmt.Println("Error", err)
+						fmt.Println("Error:", err)
 					}
 				}
 			}
@@ -74,13 +82,26 @@ func main() {
 	}
 }
 
-func manageSensuProxyClient(client SensuClient) error {
-	baseUrl := "http://127.0.0.1:4567/clients"
+func manageSensuProxyClient(apis []string, client SensuClient) error {
+	random := rand.New(rand.NewSource(time.Now().Unix()))
+	randomInt := random.Intn(len(apis))
+
+	api, err := url.Parse(apis[randomInt])
+
+	if err != nil {
+		return err
+	}
+
+	clientsUrl := "http://" + api.Host + "/clients"
 
 	httpClient := &http.Client{}
 
-	req, err := http.NewRequest("GET", baseUrl+"/"+client.Name, nil)
-	req.SetBasicAuth("foo", "bar")
+	req, err := http.NewRequest("GET", clientsUrl+"/"+client.Name, nil)
+	if api.User != nil {
+		user := api.User.Username()
+		pass, _ := api.User.Password()
+		req.SetBasicAuth(user, pass)
+	}
 
 	getResp, err := httpClient.Do(req)
 
@@ -89,12 +110,17 @@ func manageSensuProxyClient(client SensuClient) error {
 	}
 	defer getResp.Body.Close()
 
-	if getResp.StatusCode == 404 {
+	switch getResp.StatusCode {
+	case 404:
 		data, _ := json.Marshal(client)
 
-		req, err := http.NewRequest("POST", baseUrl, bytes.NewBuffer(data))
+		req, err := http.NewRequest("POST", clientsUrl, bytes.NewBuffer(data))
 		req.Header.Set("Content-Type", "application/json")
-		req.SetBasicAuth("foo", "bar")
+		if api.User != nil {
+			user := api.User.Username()
+			pass, _ := api.User.Password()
+			req.SetBasicAuth(user, pass)
+		}
 
 		postResp, err := httpClient.Do(req)
 
@@ -102,12 +128,14 @@ func manageSensuProxyClient(client SensuClient) error {
 			return err
 		}
 		defer postResp.Body.Close()
+	case 401:
+		return errors.New("Sensu API authentication failure")
 	}
 
 	return nil
 }
 
-func discoverInstance(instance *ec2.Instance) error {
+func discoverInstance(apis []string, instance *ec2.Instance) error {
 	client := SensuClient{
 		Name:          *instance.InstanceId,
 		Address:       *instance.PublicDnsName,
@@ -120,7 +148,7 @@ func discoverInstance(instance *ec2.Instance) error {
 		client.Ec2.Tags[*tag.Key] = *tag.Value
 	}
 
-	err := manageSensuProxyClient(client)
+	err := manageSensuProxyClient(apis, client)
 	return err
 }
 
@@ -176,21 +204,23 @@ func (a flagArgs) Args() []string {
 	return []string(a)
 }
 
-func parseArguments() (states []string, regions []string, tags []string) {
-	var stateArgs, regionArgs, tagArgs flagArgs
+func parseArguments() (apis []string, states []string, regions []string, tags []string) {
+	var apiArgs, stateArgs, regionArgs, tagArgs flagArgs
 
+	flag.Var(&apiArgs, "api", "api url")
 	flag.Var(&stateArgs, "state", "state list")
 	flag.Var(&regionArgs, "region", "region list")
-	flag.Var(&tagArgs, "tag", "tag list")
+	flag.Var(&tagArgs, "tag", "tag key=value list")
 	flag.Parse()
 
 	if flag.NFlag() != 0 {
+		apis = append([]string{}, apiArgs.Args()...)
 		states = append([]string{}, stateArgs.Args()...)
 		regions = append([]string{}, regionArgs.Args()...)
 		tags = append([]string{}, tagArgs.Args()...)
 	}
 
-	return states, regions, tags
+	return apis, states, regions, tags
 }
 
 func usage() string {
