@@ -13,3 +13,7 @@ sensu-ec2-discovery
 
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
+
+# Vendored packages
+vendor*
+_vendor*
