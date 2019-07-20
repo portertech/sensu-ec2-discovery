@@ -6,21 +6,12 @@ import (
 	"os"
 	"strings"
 
+	corev2 "github.com/sensu/sensu-go/api/core/v2"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
-
-type SensuClientEc2 struct {
-	Tags map[string]string `json:"tags"`
-}
-
-type SensuClient struct {
-	Name          string         `json:"name"`
-	Address       string         `json:"address"`
-	Subscriptions []string       `json:"subscriptions"`
-	Ec2           SensuClientEc2 `json:"ec2,omitempty"`
-}
 
 // Usage: instancesByRegion -api <url> -state <value> [-state value...] [-region region...] [-tag key=value...]
 func main() {
@@ -68,19 +59,15 @@ func main() {
 }
 
 func discoverInstance(instance *ec2.Instance) {
-	client := SensuClient{
-		Name:          *instance.InstanceId,
-		Address:       *instance.PublicDnsName,
-		Subscriptions: []string{},
-		Ec2: SensuClientEc2{
-			Tags: make(map[string]string),
-		},
-	}
+	var entity corev2.Entity
+	entity.Name = *instance.InstanceId
+	entity.EntityClass = "proxy"
+	entity.Labels = make(map[string]string)
 	for _, tag := range instance.Tags {
-		client.Ec2.Tags[*tag.Key] = *tag.Value
+		entity.Labels[*tag.Key] = *tag.Value
 	}
 
-	fmt.Printf("%s\n", client.Name)
+	fmt.Printf("%s\n", entity.Name)
 	return
 }
 
