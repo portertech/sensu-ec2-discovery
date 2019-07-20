@@ -5,6 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"io/ioutil"
+	"log"
+	"net/http"
 
 	corev2 "github.com/sensu/sensu-go/api/core/v2"
 
@@ -12,6 +19,95 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
+
+type Authentication struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	Expiration   int64  `json:"expires_at"`
+}
+
+var (
+	sensuApiUrl      string = getenv("SENSU_API_URL", "http://127.0.0.1:8080")
+	sensuApiCertFile string = getenv("SENSU_API_CERT_FILE", "")
+	sensuApiUser     string = getenv("SENSU_API_USER", "admin")
+	sensuApiPass     string = getenv("SENSU_API_PASS", "P@ssw0rd!")
+	sensuApiToken    string
+)
+
+func getenv(key string, fallback string) string {
+	value := os.Getenv(key)
+	if len(value) == 0 {
+		return fallback
+	}
+	return value
+}
+
+func authenticate(httpClient *http.Client) string {
+	var authentication Authentication
+	req, err := http.NewRequest(
+		"GET",
+		fmt.Sprintf("%s/auth", sensuApiUrl),
+		nil,
+	)
+	if err != nil {
+		log.Fatal("ERROR: ", err)
+	}
+	req.SetBasicAuth(sensuApiUser, sensuApiPass)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Fatalf("ERROR: %s", err)
+	} else if resp.StatusCode == 401 {
+		log.Fatalf("ERROR: %v %s (please check your access credentials)", resp.StatusCode, http.StatusText(resp.StatusCode))
+	} else if resp.StatusCode >= 300 {
+		log.Fatalf("ERROR: %v %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+	defer resp.Body.Close()
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal("ERROR: ", err)
+	}
+	err = json.NewDecoder(bytes.NewReader(b)).Decode(&authentication)
+	if err != nil {
+		log.Fatal("ERROR: ", err)
+	}
+	return authentication.AccessToken
+}
+
+func LoadCACerts(path string) (*x509.CertPool, error) {
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("Error loading system cert pool: %s", err)
+	}
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	if path != "" {
+		certs, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("Error reading CA file (%s): %s", path, err)
+		} else {
+			rootCAs.AppendCertsFromPEM(certs)
+		}
+	}
+	return rootCAs, nil
+}
+
+func initHttpClient() *http.Client {
+	certs, err := LoadCACerts(sensuApiCertFile)
+	if err != nil {
+		log.Fatalf("ERROR: %s\n", err)
+	}
+	tlsConfig := &tls.Config{
+		RootCAs: certs,
+	}
+	tr := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+	client := &http.Client{
+		Transport: tr,
+	}
+	return client
+}
 
 // Usage: instancesByRegion -api <url> -state <value> [-state value...] [-region region...] [-tag key=value...]
 func main() {
@@ -61,6 +157,7 @@ func main() {
 func discoverInstance(instance *ec2.Instance) {
 	var entity corev2.Entity
 	entity.Name = *instance.InstanceId
+	entity.Namespace = "default"
 	entity.EntityClass = "proxy"
 	entity.Labels = make(map[string]string)
 	for _, tag := range instance.Tags {
@@ -68,6 +165,41 @@ func discoverInstance(instance *ec2.Instance) {
 	}
 
 	fmt.Printf("%s\n", entity.Name)
+
+	postBody, err := json.Marshal(entity)
+	if err != nil {
+		log.Fatal("ERROR: ", err)
+	}
+	body := bytes.NewReader(postBody)
+	req, err := http.NewRequest(
+		"POST",
+		fmt.Sprintf("%s/api/core/v2/namespaces/%s/entities",
+			sensuApiUrl,
+			entity.Namespace,
+		),
+		body,
+	)
+	if err != nil {
+		log.Fatal("ERROR: ", err)
+	}
+	var httpClient *http.Client = initHttpClient()
+	sensuApiToken = authenticate(httpClient)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", sensuApiToken))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Fatalf("ERROR: %s\n", err)
+	} else if resp.StatusCode == 404 {
+		log.Fatalf("ERROR: %v %s (%s)\n", resp.StatusCode, http.StatusText(resp.StatusCode), req.URL)
+	} else if resp.StatusCode == 409 {
+		log.Printf("INFO: %v %s; entity \"%s\" already exists\n", resp.StatusCode, http.StatusText(resp.StatusCode), entity.Name)
+	} else if resp.StatusCode >= 300 {
+		log.Fatalf("ERROR: %v %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+	defer resp.Body.Close()
+	b, err := ioutil.ReadAll(resp.Body)
+	fmt.Println(string(b))
+
 	return
 }
 
