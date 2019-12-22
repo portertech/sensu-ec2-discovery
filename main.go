@@ -244,7 +244,7 @@ func registerInstance(instance *ec2.Instance) {
 	} else if resp.StatusCode >= 300 {
 		log.Fatalf("ERROR: %v %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	} else if resp.StatusCode == 201 {
-		fmt.Printf("Registered EC2 instance \"%s\"", entity.Name)
+		log.Printf("INFO: Registered EC2 instance \"%s\"", entity.Name)
 	}
 	defer resp.Body.Close()
 	b, err := ioutil.ReadAll(resp.Body)
