@@ -1,0 +1,22 @@
+builds:
+  - env:
+    - CGO_ENABLED=0
+    main: main.go
+    binary: bin/entrypoint
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - 386
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_sha256-checksums.txt"
+  algorithm: sha256
+  
+archive:
+  format: tar.gz
+  files:
+    - LICENSE
+    - README.md
+    - CHANGELOG.md
