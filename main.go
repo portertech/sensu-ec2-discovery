@@ -1,82 +1,175 @@
 package main
 
 import (
-	"flag"
-	"fmt"
-	"os"
-	"strings"
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 
 	corev2 "github.com/sensu/sensu-go/api/core/v2"
+	"github.com/sensu/sensu-plugins-go-library/sensu"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
-type Authentication struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	Expiration   int64  `json:"expires_at"`
+type CheckConfig struct {
+	sensu.PluginConfig
+	ec2InstanceStates          string
+	ec2InstanceRegions         string
+	ec2InstanceTags            string
+	ec2Filters                 []*ec2.Filter
+	sensuNamespace             string
+	sensuApiUrl                string
+	sensuAccessToken           string
+	sensuTrustedCaFile         string
+	sensuInsecureSkipTlsVerify string
 }
 
 var (
-	sensuApiUrl      string = getenv("SENSU_API_URL", "http://127.0.0.1:8080")
-	sensuApiCertFile string = getenv("SENSU_API_CERT_FILE", "")
-	sensuApiUser     string = getenv("SENSU_API_USER", "admin")
-	sensuApiPass     string = getenv("SENSU_API_PASS", "P@ssw0rd!")
-	sensuApiToken    string
+	config = CheckConfig{
+		PluginConfig: sensu.PluginConfig{
+			Name:     "sensu-ec2-discovery",
+			Short:    "Auto-discover EC2 instances and update your Sensu Go registry.",
+			Keyspace: "sensu.io/plugins/ec2-discovery",
+		},
+	}
+
+	ec2DiscoveryConfigOptions = []*sensu.PluginConfigOption{
+		{
+			Path:      "ec2-instance-states",
+			Env:       "EC2_INSTANCE_STATES",
+			Argument:  "ec2-instance-states",
+			Shorthand: "s",
+			Usage:     "The AWS EC2 instance states to discover. Can also be set via the $EC2_INSTANCE_STATES environment variable.",
+			Value:     &config.ec2InstanceStates,
+			Default:   "pending,running,rebooting",
+		},
+		{
+			Path:      "ec2-instance-regions",
+			Env:       "EC2_INSTANCE_REGIONS",
+			Argument:  "ec2-instance-regions",
+			Shorthand: "r",
+			Usage:     "The AWS EC2 region(s) to discover. Can also be set via the $EC2_INSTANCE_REGIONS environment variable. OPTIONAL.",
+			Value:     &config.ec2InstanceRegions,
+			Default:   "",
+		},
+		{
+			Path:      "ec2-instance-tags",
+			Env:       "EC2_INSTANCE_TAGS",
+			Argument:  "ec2-instance-tags",
+			Shorthand: "t",
+			Usage:     "The AWS Cloudwatch metric dimension. Can also be set via the $EC2_INSTANCE_TAGS environment variable. OPTIONAL.",
+			Value:     &config.ec2InstanceTags,
+			Default:   "",
+		},
+		{
+			Path:      "sensu-namespace",
+			Env:       "SENSU_NAMESPACE",
+			Argument:  "sensu-namespace",
+			Shorthand: "",
+			Usage:     "The Sensu Go Namespace to register entities in. Can also be set via the $SENSU_NAMESPACE environment variable.",
+			Value:     &config.sensuNamespace,
+			Default:   "default",
+		},
+		{
+			Path:      "sensu-api-url",
+			Env:       "SENSU_API_URL",
+			Argument:  "sensu-api-url",
+			Shorthand: "",
+			Usage:     "The Sensu Go API URL. Can also be set via the $SENSU_API_URL environment variable.",
+			Value:     &config.sensuApiUrl,
+			Default:   "https://127.0.0.1:8080",
+		},
+		{
+			Path:      "sensu-access-token",
+			Env:       "SENSU_ACCESS_TOKEN",
+			Argument:  "sensu-access-token",
+			Shorthand: "",
+			Usage:     "The Sensu Go API access key. Can also be set via the $SENSU_ACCESS_TOKEN environment variable. REQUIRED.",
+			Value:     &config.sensuAccessToken,
+			Default:   "",
+		},
+		{
+			Path:      "sensu-trusted-ca-file",
+			Env:       "SENSU_TRUSTED_CA_FILE",
+			Argument:  "sensu-trusted-ca-file",
+			Shorthand: "",
+			Usage:     "The Sensu Go API URL. Can also be set via the $SENSU_TRUSTED_CA_FILE environment variable. OPTIONAL.",
+			Value:     &config.sensuTrustedCaFile,
+			Default:   "",
+		},
+		{
+			Path:      "sensu-insecure-tls-skip-verify",
+			Env:       "SENSU_INSECURE_SKIP_TLS_VERIFY",
+			Argument:  "sensu-insecure-tls-skip-verify",
+			Shorthand: "",
+			Usage:     "The Sensu Go API URL. Can also be set via the $SENSU_INSECURE_SKIP_TLS_VERIFY environment variable.",
+			Value:     &config.sensuInsecureSkipTlsVerify,
+			Default:   "false",
+		},
+	}
 )
 
-func getenv(key string, fallback string) string {
-	value := os.Getenv(key)
-	if len(value) == 0 {
-		return fallback
-	}
-	return value
+func main() {
+	check := sensu.InitCheck(
+		&config.PluginConfig,
+		ec2DiscoveryConfigOptions,
+		validateArgs,
+		discoverInstances,
+	)
+	check.Execute()
 }
 
-func authenticate(httpClient *http.Client) string {
-	var authentication Authentication
-	req, err := http.NewRequest(
-		"GET",
-		fmt.Sprintf("%s/auth", sensuApiUrl),
-		nil,
+func validateArgs(event *corev2.Event) error {
+	if config.sensuAccessToken == "" {
+		log.Fatalf("ERROR: no Sensu API access token provided. Exiting.")
+		return fmt.Errorf("No Sensu API access token provided. Exiting.")
+	}
+
+	err := createFilters(
+		strings.Split(config.ec2InstanceStates, ","),
+		strings.Split(config.ec2InstanceTags, ","),
 	)
 	if err != nil {
-		log.Fatal("ERROR: ", err)
+		log.Fatalf("ERROR: %s\n", err)
+		return err
 	}
-	req.SetBasicAuth(sensuApiUser, sensuApiPass)
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		log.Fatalf("ERROR: %s", err)
-	} else if resp.StatusCode == 401 {
-		log.Fatalf("ERROR: %v %s (please check your access credentials)", resp.StatusCode, http.StatusText(resp.StatusCode))
-	} else if resp.StatusCode >= 300 {
-		log.Fatalf("ERROR: %v %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+
+	return nil
+}
+
+func createFilters(states []string, tags []string) error {
+	config.ec2Filters = append(config.ec2Filters, &ec2.Filter{
+		Name:   aws.String("instance-state-name"),
+		Values: aws.StringSlice(states),
+	})
+
+	if len(tags) > 0 {
+		for _, tag := range tags {
+			tagPair := strings.Split(tag, "=")
+			filter := &ec2.Filter{
+				Name:   aws.String(strings.Join([]string{"tag", tagPair[0]}, ":")),
+				Values: []*string{aws.String(tagPair[1])},
+			}
+			config.ec2Filters = append(config.ec2Filters, filter)
+		}
 	}
-	defer resp.Body.Close()
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal("ERROR: ", err)
-	}
-	err = json.NewDecoder(bytes.NewReader(b)).Decode(&authentication)
-	if err != nil {
-		log.Fatal("ERROR: ", err)
-	}
-	return authentication.AccessToken
+
+	return nil
 }
 
 func LoadCACerts(path string) (*x509.CertPool, error) {
 	rootCAs, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, fmt.Errorf("Error loading system cert pool: %s", err)
+		log.Fatalf("ERROR: failed to load system cert pool: %s", err)
+		return nil, err
 	}
 	if rootCAs == nil {
 		rootCAs = x509.NewCertPool()
@@ -84,7 +177,8 @@ func LoadCACerts(path string) (*x509.CertPool, error) {
 	if path != "" {
 		certs, err := ioutil.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("Error reading CA file (%s): %s", path, err)
+			log.Fatalf("ERROR: failed to read CA file (%s): %s", path, err)
+			return nil, err
 		} else {
 			rootCAs.AppendCertsFromPEM(certs)
 		}
@@ -93,7 +187,7 @@ func LoadCACerts(path string) (*x509.CertPool, error) {
 }
 
 func initHttpClient() *http.Client {
-	certs, err := LoadCACerts(sensuApiCertFile)
+	certs, err := LoadCACerts(config.sensuTrustedCaFile)
 	if err != nil {
 		log.Fatalf("ERROR: %s\n", err)
 	}
@@ -109,62 +203,17 @@ func initHttpClient() *http.Client {
 	return client
 }
 
-// Usage: instancesByRegion -api <url> -state <value> [-state value...] [-region region...] [-tag key=value...]
-func main() {
-	states, regions, tags := parseArguments()
-
-	if len(states) == 0 {
-		states = []string{"running"}
-	}
-
-	if len(regions) == 0 {
-		var err error
-		regions, err = fetchRegions()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	filters, err := createFilters(states, tags)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	for _, region := range regions {
-		sess := session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
-		}))
-
-		ec2Svc := ec2.New(sess)
-
-		params := &ec2.DescribeInstancesInput{Filters: filters}
-		result, err := ec2Svc.DescribeInstances(params)
-
-		if err != nil {
-			fmt.Println("Error:", err)
-		} else {
-			for _, reservation := range result.Reservations {
-				for _, instance := range reservation.Instances {
-					discoverInstance(instance)
-				}
-			}
-		}
-	}
-}
-
-func discoverInstance(instance *ec2.Instance) {
+func registerInstance(instance *ec2.Instance) {
 	var entity corev2.Entity
 	entity.Name = *instance.InstanceId
-	entity.Namespace = "default"
+	entity.Namespace = config.sensuNamespace
 	entity.EntityClass = "proxy"
 	entity.Labels = make(map[string]string)
 	for _, tag := range instance.Tags {
 		entity.Labels[*tag.Key] = *tag.Value
 	}
 
-	fmt.Printf("%s\n", entity.Name)
+	// fmt.Printf("%s\n", entity.Name)
 
 	postBody, err := json.Marshal(entity)
 	if err != nil {
@@ -174,7 +223,7 @@ func discoverInstance(instance *ec2.Instance) {
 	req, err := http.NewRequest(
 		"POST",
 		fmt.Sprintf("%s/api/core/v2/namespaces/%s/entities",
-			sensuApiUrl,
+			config.sensuApiUrl,
 			entity.Namespace,
 		),
 		body,
@@ -183,8 +232,7 @@ func discoverInstance(instance *ec2.Instance) {
 		log.Fatal("ERROR: ", err)
 	}
 	var httpClient *http.Client = initHttpClient()
-	sensuApiToken = authenticate(httpClient)
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", sensuApiToken))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.sensuAccessToken))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -195,98 +243,41 @@ func discoverInstance(instance *ec2.Instance) {
 		log.Printf("INFO: %v %s; entity \"%s\" already exists\n", resp.StatusCode, http.StatusText(resp.StatusCode), entity.Name)
 	} else if resp.StatusCode >= 300 {
 		log.Fatalf("ERROR: %v %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+	} else if resp.StatusCode == 201 {
+		fmt.Printf("Registered EC2 instance \"%s\"", entity.Name)
 	}
 	defer resp.Body.Close()
 	b, err := ioutil.ReadAll(resp.Body)
-	fmt.Println(string(b))
+	if err != nil {
+		log.Fatalf("ERROR: %s\n", err)
+	} else {
+		fmt.Printf("%s\n", string(b))
+	}
 
 	return
 }
 
-func createFilters(states []string, tags []string) ([]*ec2.Filter, error) {
-	filters := []*ec2.Filter{
-		&ec2.Filter{
-			Name:   aws.String("instance-state-name"),
-			Values: aws.StringSlice(states),
-		},
-	}
+// Usage: instancesByRegion -api <url> -state <value> [-state value...] [-region region...] [-tag key=value...]
+func discoverInstances(event *corev2.Event) error {
+	for _, region := range strings.Split(config.ec2InstanceRegions, ",") {
+		aws_session := session.Must(session.NewSession(&aws.Config{
+			Region: aws.String(region),
+		}))
 
-	for _, tag := range tags {
-		tagPair := strings.Split(tag, "=")
-		filter := &ec2.Filter{
-			Name:   aws.String(strings.Join([]string{"tag", tagPair[0]}, ":")),
-			Values: []*string{aws.String(tagPair[1])},
+		svc := ec2.New(aws_session)
+
+		params := &ec2.DescribeInstancesInput{Filters: config.ec2Filters}
+		result, err := svc.DescribeInstances(params)
+		if err != nil {
+			log.Fatalf("ERROR: %s\n", err)
+			return err
+		} else {
+			for _, reservation := range result.Reservations {
+				for _, instance := range reservation.Instances {
+					registerInstance(instance)
+				}
+			}
 		}
-		filters = append(filters, filter)
 	}
-
-	return filters, nil
-}
-
-func fetchRegions() ([]string, error) {
-	awsSession := session.Must(session.NewSession(&aws.Config{}))
-
-	svc := ec2.New(awsSession)
-	awsRegions, err := svc.DescribeRegions(&ec2.DescribeRegionsInput{})
-	if err != nil {
-		return nil, err
-	}
-
-	regions := make([]string, 0, len(awsRegions.Regions))
-	for _, region := range awsRegions.Regions {
-		regions = append(regions, *region.RegionName)
-	}
-
-	return regions, nil
-}
-
-type flagArgs []string
-
-func (a flagArgs) String() string {
-	return strings.Join(a.Args(), ",")
-}
-
-func (a *flagArgs) Set(value string) error {
-	*a = append(*a, value)
 	return nil
-}
-
-func (a flagArgs) Args() []string {
-	return []string(a)
-}
-
-func parseArguments() (states []string, regions []string, tags []string) {
-	var stateArgs, regionArgs, tagArgs flagArgs
-
-	flag.Var(&stateArgs, "state", "state list")
-	flag.Var(&regionArgs, "region", "region list")
-	flag.Var(&tagArgs, "tag", "tag key=value list")
-	flag.Parse()
-
-	if flag.NFlag() != 0 {
-		states = append([]string{}, stateArgs.Args()...)
-		regions = append([]string{}, regionArgs.Args()...)
-		tags = append([]string{}, tagArgs.Args()...)
-	}
-
-	return states, regions, tags
-}
-
-func usage() string {
-	return `
-
-Missing mandatory flag 'api'.
-
-To discover running instances in every region:
-	./sensu-ec2-discover -api http://user:password@127.0.0.1:4567
-
-To discover running and pending instances in specific regions:
-	./sensu-ec2-discover -api http://user:password@127.0.0.1:4567 -state running -state pending -region us-west-1 -region us-west-2
-
-To discover running instances with a specific tag key/value:
-	./sensu-ec2-discover -api http://user:password@127.0.0.1:4567 -tag environment=production
-
-To balance the Sensu API request load accross several Sensu APIs:
-	./sensu-ec2-discover -api http://user:password@host1:4567 -api http://user:password@host2:4567
-`
 }
