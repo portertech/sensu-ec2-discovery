@@ -133,10 +133,7 @@ func validateArgs(event *corev2.Event) error {
 		return fmt.Errorf("No Sensu API access token provided. Exiting.")
 	}
 
-	err := createFilters(
-		strings.Split(config.ec2InstanceStates, ","),
-		strings.Split(config.ec2InstanceTags, ","),
-	)
+	err := createFilters()
 	if err != nil {
 		log.Fatalf("ERROR: %s\n", err)
 		return err
@@ -145,13 +142,20 @@ func validateArgs(event *corev2.Event) error {
 	return nil
 }
 
-func createFilters(states []string, tags []string) error {
-	config.ec2Filters = append(config.ec2Filters, &ec2.Filter{
-		Name:   aws.String("instance-state-name"),
-		Values: aws.StringSlice(states),
-	})
+func createFilters() error {
+	var states []string
+	var tags []string
 
-	if len(tags) > 0 {
+	if len(config.ec2InstanceStates) > 0 {
+		states = strings.Split(config.ec2InstanceStates, ",")
+		config.ec2Filters = append(config.ec2Filters, &ec2.Filter{
+			Name:   aws.String("instance-state-name"),
+			Values: aws.StringSlice(states),
+		})
+	}
+
+	if len(config.ec2InstanceTags) > 0 {
+		tags = strings.Split(config.ec2InstanceTags, ",")
 		for _, tag := range tags {
 			tagPair := strings.Split(tag, "=")
 			filter := &ec2.Filter{
@@ -240,18 +244,19 @@ func registerInstance(instance *ec2.Instance) {
 	} else if resp.StatusCode == 404 {
 		log.Fatalf("ERROR: %v %s (%s)\n", resp.StatusCode, http.StatusText(resp.StatusCode), req.URL)
 	} else if resp.StatusCode == 409 {
-		log.Printf("INFO: %v %s; entity \"%s\" already exists\n", resp.StatusCode, http.StatusText(resp.StatusCode), entity.Name)
+		log.Printf("INFO: entity \"%s\" already exists (%v: %s)\n", entity.Name, resp.StatusCode, http.StatusText(resp.StatusCode))
 	} else if resp.StatusCode >= 300 {
 		log.Fatalf("ERROR: %v %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	} else if resp.StatusCode == 201 {
-		log.Printf("INFO: Registered EC2 instance \"%s\"", entity.Name)
-	}
-	defer resp.Body.Close()
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("ERROR: %s\n", err)
+		log.Printf("INFO: registered entity for EC2 instance \"%s\"", entity.Name)
 	} else {
-		fmt.Printf("%s\n", string(b))
+		defer resp.Body.Close()
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatalf("ERROR: %s\n", err)
+		} else {
+			fmt.Printf("%s\n", string(b))
+		}
 	}
 
 	return
