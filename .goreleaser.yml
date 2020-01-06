@@ -1,14 +1,26 @@
 builds:
-  - env:
-    - CGO_ENABLED=0
-    main: main.go
-    binary: bin/entrypoint
-    goos:
-      - darwin
-      - linux
-    goarch:
-      - amd64
-      - 386
+- env:
+  - CGO_ENABLED=0
+  main: main.go
+  binary: bin/entrypoint
+  goos:
+    - darwin
+    - linux
+    - windows
+  goarch:
+    - amd64
+    - 386
+- env:
+  - CGO_ENABLED=0
+  main: main.go
+  binary: bin/{{ .ProjectName }}
+  goos:
+    - darwin
+    - linux
+    - windows
+  goarch:
+    - amd64
+    - 386
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_sha512-checksums.txt"
