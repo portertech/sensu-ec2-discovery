@@ -24,6 +24,7 @@ jobs:
     - name: Fetch Golang dependencies 
       run: |
         export GOPATH=$HOME/go
+        export GOBIN=$GOPATH/bin
         mkdir -p $GOPATH/src $GOPATH/bin
         go get
         
