@@ -1,0 +1,29 @@
+---
+name: Build
+on:
+  push:
+    branches:
+    - master
+    - sensu-go
+    tags:
+    - "*"
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-18.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+    - name: Set up Golang
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.13.x
+    - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v1
+        with:
+          version: v0.124.1
+          args: release --rm-dist
+          workdir: .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
