@@ -26,7 +26,6 @@ jobs:
         export GOPATH=$HOME/go
         export GOBIN=$GOPATH/bin
         mkdir -p $GOPATH/src $GOPATH/bin
-        go get github.com/sensu/sensu-plugins-go-library@check-plugins
         go get
         
     - name: Run GoReleaser
