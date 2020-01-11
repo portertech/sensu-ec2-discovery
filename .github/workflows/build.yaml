@@ -26,6 +26,8 @@ jobs:
         export GOPATH=$HOME/go
         export GOBIN=$GOPATH/bin
         mkdir -p $GOPATH/src $GOPATH/bin
+        go get github.com/inconshreveable/mousetrap 
+        go get github.com/konsorten/go-windows-terminal-sequences 
         go get
         
     - name: Run GoReleaser
