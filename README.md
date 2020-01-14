@@ -2,16 +2,16 @@
 
 ## Overview
 
-Sensu EC2 Discovery is a `sensuctl` command plugin that collects AWS EC2
-instance data from the EC2 API and registers a Sensu Proxy Entity for each EC2
-instance.
+Sensu EC2 Discovery is a `sensuctl` command plugin that collects AWS
+EC2 instance data from the EC2 API and registers a Sensu Proxy Entity
+for each EC2 instance.
 
 ## Installation and usage
 
 1. Install the plugin using `sensuctl`:
 
    ```shell
-   $ sensuctl command install ec2-discovery calebhailey/sensu-ec2-discovery:0.1.0
+   $ sensuctl command install ec2-discovery portertech/sensu-ec2-discovery:0.1.0
    ```
 
 2. Verify installation using `sensuctl`:

@@ -1,0 +1,30 @@
+language: go
+go:
+- 1.12.x
+install:
+- go get gopkg.in/alecthomas/gometalinter.v1
+- go get github.com/gordonklaus/ineffassign
+- go get github.com/jgautheron/goconst/cmd/goconst
+- go get github.com/kisielk/errcheck
+- go get github.com/golang/dep/cmd/dep
+- dep ensure
+script:
+- gometalinter.v1 --vendor --disable-all --enable=vet --enable=ineffassign
+  --enable=goconst --tests ./...
+- go test -v -race ./...
+
+before_script:
+- echo "REPO $TRAVIS_REPO_SLUG TAG ${TRAVIS_TAG}"
+
+deploy:
+  - #goreleaser
+    provider: script
+    script: curl -sL https://git.io/goreleaser | bash
+    skip_cleanup: true
+    on:
+      tags: true
+      condition: $TRAVIS_OS_NAME = linux
+
+env:
+  global:
+    - secure: Xij0BXWFuQOcT+dNabel3SqZU5HXU9LQ6ZpT13vxziwLPhGivdKvWvv2ze1Jqe5wHwl0pKgXuTGuEnQSntM/vxwwQI6nOsjYCYmpNiQr7lXMhewAM1N4T2BhUlIy0WJVgrMn1V5LGZHY80+OXKoDFWAjbJs6jsq9tYbwOBHxM8+7pgkJeVXmLOD9VBhvjWJmoY/dVVpTiQ22X7veAXXGobVoLOpw2dNlXe3H93kNQ7KJu5C7wq7m9WpIDLn0PlyxD6dixT6KY0PKgoYqvBpv0pMionDLPBRFXZ6y+3AttX9QGz3j7xekK1SKgeKJKerZz+uVWBt4dwOS2OediiZtDy+1VxhHuQucY1B8+hdAqKWAD9DRqWoXblCdd/8iEfq2yg/wWOrj+/9ZjQBmAaT2FtlMSMnvnFIKFUbMr2ZGZFdpBbNKe/DgPX8yaQ/YFqJvgbsUsd9qoZf2tx3S7iE8s2oMi/7cbXRr6wY0MD17VSJvb2eIIDQPWnjzob6ktwH61lpWucKNPrkVnOypXG5y4lg1Ry77Q718D3u+lgr4I5iv59m7Rfi11KoKzWxSHMjpDncoSmheHkpYiV9nXY6HraqkSguytWQrzLJxRfwDEvRsImALXkVYQhnxZEeGBD4ctd56rK22HfxWSbM+JXXQ+v9dPm6yplePlzqC68ShQik=
