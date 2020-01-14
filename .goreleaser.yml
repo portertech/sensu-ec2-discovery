@@ -1,0 +1,49 @@
+builds:
+- id: command-plugin
+  env:
+  - CGO_ENABLED=0
+  main: main.go
+  binary: bin/entrypoint
+  goos:
+  - darwin
+  - linux
+  - windows
+  goarch:
+  - amd64
+  - 386
+- id: check-plugin
+  env:
+  - CGO_ENABLED=0
+  main: main.go
+  binary: bin/{{ .ProjectName }}
+  goos:
+  - darwin
+  - linux
+  - windows
+  goarch:
+  - amd64
+  - 386
+
+archives:
+- id: default
+  name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  replacements:
+    amd64: 64-bit
+    386: 32-bit
+    darwin: macos
+  format: tar.gz
+  builds:
+  - command-plugin
+  - check-plugin
+  files:
+  - LICENSE
+  - README.md
+  - CHANGELOG.md
+  
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_sha512-checksums.txt"
+  algorithm: sha512
+
+release:
+  draft: true 
+  prerelease: auto
