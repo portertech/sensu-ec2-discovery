@@ -46,14 +46,6 @@
   version = "v1.28.1"
 
 [[projects]]
-  digest = "1:b5ae3c3692bf5b56d49dd2027a7e7ffc21fb865e96d3f8173fa94f52de8549bd"
-  name = "github.com/calebhailey/sensu-plugins-go-library"
-  packages = ["sensu"]
-  pruneopts = "UT"
-  revision = "3ea0d273e45847a43108b9025fe0d65be86463a2"
-  version = "0.3.0"
-
-[[projects]]
   digest = "1:869f02ffb8116116f1d490db9d6424060ca72ace6cb90d02a78defba19a4e714"
   name = "github.com/coreos/etcd"
   packages = [
@@ -207,12 +199,15 @@
   version = "v5.14.2"
 
 [[projects]]
-  digest = "1:cd3df05fa46d060cbdc572894ca6d55ac7d3eafc2515faa1f270e95961eefcce"
+  branch = "check-plugins"
+  digest = "1:57d7781954e812a112af432097e48a0bdcfe2f7d98307a65b1df41d5a0d8ba75"
   name = "github.com/sensu/sensu-plugins-go-library"
-  packages = ["args"]
+  packages = [
+    "args",
+    "sensu",
+  ]
   pruneopts = "UT"
-  revision = "3ea0d273e45847a43108b9025fe0d65be86463a2"
-  version = "0.3.0"
+  revision = "61034fabbb46cf40e665da87e4a1e3ef1b1cafd0"
 
 [[projects]]
   digest = "1:04457f9f6f3ffc5fea48e71d62f2ca256637dee0a04d710288e27e05c8b41976"
@@ -369,8 +364,8 @@
     "github.com/aws/aws-sdk-go/aws",
     "github.com/aws/aws-sdk-go/aws/session",
     "github.com/aws/aws-sdk-go/service/ec2",
-    "github.com/calebhailey/sensu-plugins-go-library/sensu",
     "github.com/sensu/sensu-go/api/core/v2",
+    "github.com/sensu/sensu-plugins-go-library/sensu",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

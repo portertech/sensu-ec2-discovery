@@ -6,22 +6,21 @@ import (
 	"os"
 )
 
-type GoHandler struct {
+type Check struct {
 	basePlugin
 	validationFunction func(event *types.Event) error
 	executeFunction    func(event *types.Event) error
 }
 
-func NewGoHandler(config *PluginConfig, options []*PluginConfigOption,
-	validationFunction func(event *types.Event) error, executeFunction func(event *types.Event) error) *GoHandler {
-	goHandler := &GoHandler{
+func InitCheck(config *PluginConfig, options []*PluginConfigOption,
+	validationFunction func(event *types.Event) error, executeFunction func(event *types.Event) error) *Check {
+	check := &Check{
 		basePlugin: basePlugin{
 			config:                 config,
 			options:                options,
 			sensuEvent:             nil,
 			eventReader:            os.Stdin,
-			readEvent:              true,
-			eventMandatory:         true,
+			readEvent:              false,
 			configurationOverrides: true,
 			errorExitStatus:        1,
 		},
@@ -29,22 +28,22 @@ func NewGoHandler(config *PluginConfig, options []*PluginConfigOption,
 		executeFunction:    executeFunction,
 	}
 
-	goHandler.pluginWorkflowFunction = goHandler.goHandlerWorkflow
-	goHandler.initPlugin()
+	check.pluginExecuteFunction = check.execute
+	check.initPlugin()
 
-	return goHandler
+	return check
 }
 
-// Executes the handler's workflow
-func (goHandler *GoHandler) goHandlerWorkflow(_ []string) (int, error) {
+// Executes the check
+func (check *Check) execute(_ []string) (int, error) {
 	// Validate input using validateFunction
-	err := goHandler.validationFunction(goHandler.sensuEvent)
+	err := check.validationFunction(check.sensuEvent)
 	if err != nil {
 		return 1, fmt.Errorf("error validating input: %s", err)
 	}
 
 	// Execute handler logic using executeFunction
-	err = goHandler.executeFunction(goHandler.sensuEvent)
+	err = check.executeFunction(check.sensuEvent)
 	if err != nil {
 		return 1, fmt.Errorf("error executing handler: %s", err)
 	}

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	corev2 "github.com/sensu/sensu-go/api/core/v2"
-	"github.com/calebhailey/sensu-plugins-go-library/sensu"
+	"github.com/sensu/sensu-plugins-go-library/sensu"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"

@@ -30,8 +30,8 @@
   version = "1.28.1"
 
 [[constraint]]
-  name = "github.com/calebhailey/sensu-plugins-go-library"
-  version = "0.3.0"
+  name = "github.com/sensu/sensu-plugins-go-library"
+  branch = "check-plugins"
 
 [[constraint]]
   name = "github.com/sensu/sensu-go"
