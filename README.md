@@ -11,7 +11,7 @@ for each EC2 instance.
 1. Install the plugin using `sensuctl`:
 
    ```shell
-   $ sensuctl command install ec2-discovery portertech/sensu-ec2-discovery:0.0.1
+   $ sensuctl command install ec2-discovery portertech/sensu-ec2-discovery:0.2.0
    ```
 
 2. Verify installation using `sensuctl`:
