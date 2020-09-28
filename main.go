@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	corev2 "github.com/sensu/sensu-go/api/core/v2"
 	"github.com/sensu-community/sensu-plugin-sdk/sensu"
+	corev2 "github.com/sensu/sensu-go/api/core/v2"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -209,9 +209,9 @@ func loadCACerts(path string) (*x509.CertPool, error) {
 }
 
 func initHttpClient() *http.Client {
-        client := &http.Client{
-                Transport: http.DefaultTransport,
-        }
+	client := &http.Client{
+		Transport: http.DefaultTransport,
+	}
 
 	if len(config.sensuTrustedCaFile) > 0 {
 		certs, err := loadCACerts(config.sensuTrustedCaFile)
@@ -221,7 +221,7 @@ func initHttpClient() *http.Client {
 		tlsConfig := &tls.Config{
 			RootCAs: certs,
 		}
-		client.Transport  = &http.Transport{
+		client.Transport = &http.Transport{
 			TLSClientConfig: tlsConfig,
 		}
 	}
